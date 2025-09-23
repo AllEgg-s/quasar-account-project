@@ -45,9 +45,15 @@ function saveToStorage(accounts: Account[]) {
 export const useAccountsStore = defineStore('accounts', {
     state: () => ({
         accounts: loadFromStorage(),
+        nextId: 1 as number,
     }),
     actions: {
         addAccount(account: Account) {
+            if (!this.nextId || this.nextId <= 1) {
+                const maxId = this.accounts.reduce((m, a) => (a.id > m ? a.id : m), 0);
+                this.nextId = maxId + 1;
+            }
+            account.id = this.nextId++;
             this.accounts.push(account);
             saveToStorage(this.accounts);
         },
@@ -72,12 +78,19 @@ export const useAccountsStore = defineStore('accounts', {
 
             const { valid } = validateAccount(merged);
 
-            if (!valid) {
+            const payloadKeys = Object.keys(payload).filter((k) => k !== 'labelsString');
+            const onlyLabelsChanged =
+                payload.labelsString !== undefined && payloadKeys.length === 0;
+
+            if (!valid && !onlyLabelsChanged) {
                 return false;
             }
 
             this.accounts[index] = merged;
-            saveToStorage(this.accounts);
+
+            if (valid || onlyLabelsChanged) {
+                saveToStorage(this.accounts);
+            }
             return true;
         },
 
