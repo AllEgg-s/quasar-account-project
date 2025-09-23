@@ -2,13 +2,32 @@
     <q-page>
         <div class="flex justify-between items-center">
             <h1>Учетные записи</h1>
-            <q-btn icon="add" color="primary" @click="addNewAccount"> </q-btn>
+            <q-btn icon="add" color="primary" @click="onAdd"> </q-btn>
         </div>
-        <q-table :rows="accounts" :columns="columns" row-key="id" flat bordered>
+        <q-table
+            :rows="store.accounts"
+            :columns="columns"
+            row-key="id"
+            flat
+            bordered
+            no-data-label="Нет учетных записей"
+        >
             <template #body="props">
                 <q-tr :props="props">
                     <q-td>
-                        <q-input :maxlength="50" v-model="props.row.label" />
+                        <q-input
+                            v-model="labelsLocal[props.row.id]"
+                            :maxlength="LABEL_MAX"
+                            hint="Введите метки через ; (точка с запятой)"
+                            bottom-slots
+                            lazy-rules
+                            :rules="[
+                                (v) =>
+                                    (v?.length ?? 0) <= LABEL_MAX ||
+                                    `Максимум ${LABEL_MAX} символов`,
+                            ]"
+                            @blur="onLabelBlur(props.row)"
+                        />
                     </q-td>
                     <q-td>
                         <q-select
@@ -16,13 +35,21 @@
                             :options="accountTypes"
                             emit-value
                             map-options
+                            @update:model-value="(val) => onTypeChange(props.row, val)"
                         />
                     </q-td>
                     <q-td>
                         <q-input
                             v-model="props.row.login"
-                            :maxlength="100"
-                            :rules="[(val) => !!val || 'Обязателен к заполнению']"
+                            :maxlength="LOGIN_MAX"
+                            lazy-rules
+                            :rules="[
+                                (v) => !!v || 'Обязателен к заполнению',
+                                (v) =>
+                                    (v?.length ?? 0) <= LOGIN_MAX ||
+                                    `Максимум ${LOGIN_MAX} символов`,
+                            ]"
+                            @blur="onLoginBlur(props.row)"
                         />
                     </q-td>
                     <q-td>
@@ -30,12 +57,19 @@
                             v-if="props.row.type === 'Локальная'"
                             v-model="props.row.password"
                             type="password"
-                            :rules="[(val) => !!val || 'Обязателен к заполнению']"
-                            :maxlength="100"
+                            :maxlength="PASSWORD_MAX"
+                            lazy-rules
+                            :rules="[
+                                (v) => !!v || 'Обязателен для Локальная',
+                                (v) =>
+                                    (v?.length ?? 0) <= PASSWORD_MAX ||
+                                    `Максимум ${PASSWORD_MAX} символов`,
+                            ]"
+                            @blur="onPasswordBlur(props.row)"
                         />
                     </q-td>
                     <q-td>
-                        <q-btn icon="delete" @click="deleteRow(props.row)"></q-btn>
+                        <q-btn icon="delete" @click="onDelete(props.row)"></q-btn>
                     </q-td>
                 </q-tr>
             </template>
@@ -44,43 +78,60 @@
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue';
+import { reactive, onMounted } from 'vue';
+import { useAccountsStore } from 'src/stores/account-store';
+import { createEmptyAccount } from 'src/factories/createAccount';
+import { labelsToString } from 'src/utils/labelsToString';
+import { LABEL_MAX, LOGIN_MAX, PASSWORD_MAX } from 'src/models/models';
+import type { Account, AccountType } from 'src/models/models';
 
-type Account = {
-    id: number;
-    label: string;
-    type: string;
-    login: string;
-    password: string;
-};
+const store = useAccountsStore();
+const accountTypes = ['LDAP', 'Локальная'];
 
-const accounts = ref<Account[]>([
-    { id: 1, label: 'Метки через ;', type: 'LDAP', login: 'login', password: '' },
-    { id: 2, label: 'Метки через ;', type: 'Локальная', login: 'user2', password: 'pass123' },
-]);
-const columns = ref([
-    { name: 'label', label: 'Метки через ;', field: 'label' },
+const labelsLocal = reactive<Record<number, string>>({});
+
+function ensureLabelStringFor(id: number, labels: { text: string }[]) {
+    labelsLocal[id] = labelsToString(labels);
+}
+
+onMounted(() => {
+    store.accounts.forEach((a) => {
+        ensureLabelStringFor(a.id, a.labels);
+    });
+});
+
+function onAdd() {
+    const emptyacc = createEmptyAccount();
+    store.addAccount(emptyacc);
+    ensureLabelStringFor(emptyacc.id, emptyacc.labels);
+}
+
+function onDelete(row: { id: number }) {
+    store.deleteAccount(row.id);
+    delete labelsLocal[row.id];
+}
+
+function onLabelBlur(row: Account) {
+    const value = labelsLocal[row.id] ?? '';
+    store.updateAccount(row.id, { labelsString: value });
+}
+function onTypeChange(row: Account, val: AccountType) {
+    store.updateAccount(row.id, { type: val });
+}
+function onLoginBlur(row: Account) {
+    store.updateAccount(row.id, { login: row.login });
+}
+function onPasswordBlur(row: Account) {
+    store.updateAccount(row.id, { password: row.password ?? '' });
+}
+
+const columns = [
+    { name: 'label', label: 'Метки через ;', field: 'labels' },
     { name: 'type', label: 'Тип', field: 'type' },
     { name: 'login', label: 'Логин', field: 'login' },
     { name: 'password', label: 'Пароль', field: 'password' },
-]);
-
-const accountTypes = ref(['LDAP', 'Локальная']);
-
-const deleteRow = (row: Account) => {
-    accounts.value = accounts.value.filter((accounts) => accounts.id !== row.id);
-};
-
-const addNewAccount = () => {
-    const newAccount: Account = {
-        id: accounts.value.length++,
-        label: '',
-        type: '',
-        login: '',
-        password: '',
-    };
-    accounts.value.push(newAccount);
-};
+    { name: 'actions', label: '', field: 'actions' },
+];
 </script>
 
 <style></style>

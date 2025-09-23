@@ -44,7 +44,7 @@ function saveToStorage(accounts: Account[]) {
 
 export const useAccountsStore = defineStore('accounts', {
     state: () => ({
-        accounts: loadFromStorage() as Account[],
+        accounts: loadFromStorage(),
     }),
     actions: {
         addAccount(account: Account) {
